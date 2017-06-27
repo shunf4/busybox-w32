@@ -171,7 +171,9 @@ shell_builtin_read(void FAST_FUNC (*setvar)(const char *name, const char *val),
 	bufpos = 0;
 	do {
 		char c;
+#if !ENABLE_PLATFORM_MINGW32
 		struct pollfd pfd[1];
+#endif
 		int timeout;
 
 		if ((bufpos & 0xff) == 0)
