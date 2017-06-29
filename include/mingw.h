@@ -475,6 +475,7 @@ char **env_setenv(char **env, const char *name);
 const char *get_busybox_exec_path(void);
 void init_winsock(void);
 
+const char *mingw_pathconv(const char *path);
 int has_exe_suffix(const char *p);
 char *file_is_win32_executable(const char *p);
 
