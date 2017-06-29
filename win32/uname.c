@@ -8,7 +8,7 @@ int uname(struct utsname *name)
 	OSVERSIONINFO os_info;
 	SYSTEM_INFO sys_info;
 
-	strcpy(name->sysname, "Windows_NT");
+	strcpy(name->sysname, "MINGW(BusyBox/Win32)");
 
 	if ( gethostname(name->nodename, sizeof(name->nodename)) != 0 ) {
 		strcpy(name->nodename, unk);
@@ -20,9 +20,11 @@ int uname(struct utsname *name)
 	strcpy(name->release, unk);
 	strcpy(name->version, unk);
 	if (GetVersionEx(&os_info)) {
-		sprintf(name->release, "%u.%u", (unsigned int)os_info.dwMajorVersion,
-				(unsigned int)os_info.dwMinorVersion);
-		sprintf(name->version, "%u", (unsigned int)os_info.dwBuildNumber);
+		sprintf(name->release, "2.0("BB_VER"/%u.%u)",
+			(unsigned int)os_info.dwMajorVersion,
+			(unsigned int)os_info.dwMinorVersion);
+		sprintf(name->version, "%u",
+			(unsigned int)os_info.dwBuildNumber);
 	}
 
 	strcpy(name->machine, unk);
