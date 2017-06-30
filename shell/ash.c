@@ -5671,6 +5671,16 @@ openredirect(union node *redir)
 		/* FALLTHROUGH */
 	case NCLOBBER:
 		f = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+#if ENABLE_PLATFORM_MINGW32
+		if (f < 0 && errno == EACCES) {
+			f = open(fname, O_WRONLY, 0666);
+			if (f >= 0 && ftruncate(f, 0) < 0) {
+				int saved = errno;
+				close(f);
+				errno = saved;
+			}
+		}
+#endif
 		if (f < 0)
 			goto ecreate;
 		break;
