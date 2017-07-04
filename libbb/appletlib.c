@@ -1022,7 +1022,6 @@ static NORETURN void run_applet_and_exit(const char *name, char **argv)
 
 #endif /* !defined(SINGLE_APPLET_MAIN) */
 
-
 #if ENABLE_BUILD_LIBBUSYBOX
 int lbb_main(char **argv)
 #else
@@ -1082,6 +1081,54 @@ int main(int argc UNUSED_PARAM, char **argv)
 	}
 	if ( stderr ) {
 		_setmode(fileno(stderr), _O_BINARY);
+	}
+
+	{
+		wchar_t **wargv, *wenv;
+
+		/* get wide char arguments and environment */
+		if ((wargv = CommandLineToArgvW(GetCommandLineW(), &argc)) &&
+				(wenv = GetEnvironmentStringsW())) {
+			int i;
+			wchar_t *p;
+
+			for (i = 0; i < argc; i++) {
+				int size = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1,
+						NULL, 0, NULL, NULL);
+				argv[i] = malloc(size);
+				if (!argv[i])
+					bb_error_msg_and_die("Out of memory");
+				WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, argv[i], size,
+						NULL, NULL);
+			}
+			LocalFree(wargv);
+
+			/* Manually convert non-ASCII environment entries from UTF-16 */
+			for (i = 0; wenv[i]; i++) {
+				for (p = wenv + i; *p; p++)
+					if (*p & ~0x7f) {
+						/* Non-ASCII name or value */
+						DWORD size = WideCharToMultiByte(CP_UTF8, 0,
+								wenv + i, -1, NULL, 0, NULL, NULL) + 1;
+						char *buf;
+
+						if (!size)
+							break;
+						buf = malloc(size);
+						if (!buf)
+							bb_error_msg_and_die("Out of memory");
+						if (WideCharToMultiByte(CP_UTF8, 0,
+								wenv + i, -1, buf, size, NULL, NULL))
+							/* if we could not convert, punt */
+							putenv(buf);
+						free(buf);
+						break;
+					}
+				while (wenv[i])
+					i++; /* find end of var=value */
+			}
+			FreeEnvironmentStringsW(wenv);
+		}
 	}
 #endif
 
