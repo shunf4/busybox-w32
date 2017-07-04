@@ -1406,3 +1406,14 @@ off_t mingw_lseek(int fd, off_t offset, int whence)
 	}
 	return _lseeki64(fd, offset, whence);
 }
+
+#undef chdir
+int mingw_chdir(const char *path)
+{
+	wchar_t *wpath = mingw_pathconv(path);
+
+	if (!wpath)
+		return -1;
+
+	return _wchdir(wpath);
+}
