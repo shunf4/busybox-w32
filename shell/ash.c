@@ -2729,7 +2729,7 @@ updatepwd(const char *dir)
 
 	cdcomppath = sstrdup(dir);
 	STARTSTACKSTR(new);
-	if (!absdrive && curdir == nullstr)
+	if (!absdrive && (curdir == nullstr || *dir == '/'))
 		return 0;
 	if (!abspath) {
 		if (curdir == nullstr)
