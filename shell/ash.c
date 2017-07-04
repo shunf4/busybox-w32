@@ -10873,7 +10873,7 @@ setinputfile(const char *fname, int flags)
 		if (flags & INPUT_NOFILE_OK)
 			goto out;
 		exitstatus = 127;
-		ash_msg_and_raise_error("can't open '%s'", fname);
+		ash_msg_and_raise_error("can't open '%s': %s", fname, strerror(errno));
 	}
 	if (fd < 10)
 		fd = savefd(fd);
