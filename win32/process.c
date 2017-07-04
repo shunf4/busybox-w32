@@ -1,6 +1,58 @@
 #include "libbb.h"
 #include <tlhelp32.h>
 
+#define WARGV_OOM ((void *)(intptr_t)-1ll)
+
+static wchar_t **argv_to_wargv(char *const *argv)
+{
+	size_t size = 0, count = 1;
+	wchar_t **w0, *w1, **wargv;
+	int i;
+
+	if (!argv)
+		return NULL;
+
+	for (i = 0; argv[i]; i++) {
+		count++;
+		size += MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, NULL, 0);
+	}
+	wargv = malloc(count * sizeof(wchar_t *) + size * sizeof(wchar_t));
+	if (!wargv)
+		return WARGV_OOM;
+	w0 = wargv;
+	w1 = (void *)(w0 + count);
+	for (i = 0; argv[i]; i++) {
+		*(w0++) = w1;
+		w1 += MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, w1, size);
+	}
+	*w0 = NULL;
+
+	return wargv;
+}
+
+static intptr_t mingw_spawnve(int mode,
+		const char *cmd, char *const *argv, char *const *env)
+{
+	wchar_t *wcmd, **wargv, **wenv;
+	intptr_t ret;
+
+	wcmd = mingw_pathconv(cmd);
+	wargv = argv_to_wargv(argv);
+	wenv = argv_to_wargv(env);
+	if (!wcmd || wargv == WARGV_OOM || wenv == WARGV_OOM) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	ret = _wspawnve(mode, wcmd,
+		(const wchar_t *const *)wargv, (const wchar_t *const *)wenv);
+
+	free(wargv);
+	free(wenv);
+
+	return ret;
+}
+
 int waitpid(pid_t pid, int *status, int options)
 {
 	HANDLE proc;
@@ -254,7 +306,7 @@ spawnveq(int mode, const char *path, char *const *argv, char *const *env)
 		new_argv[i] = quote_arg(argv[i]);
 	new_argv[argc] = NULL;
 
-	ret = spawnve(mode, path, new_argv, env);
+	ret = mingw_spawnve(mode, path, new_argv, env);
 
 	for (i = 0;i < argc;i++)
 		if (new_argv[i] != argv[i])
