@@ -13,7 +13,9 @@
 #include "platform.h"
 
 #include <ctype.h>
+#if !ENABLE_PLATFORM_MINGW32
 #include <dirent.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
