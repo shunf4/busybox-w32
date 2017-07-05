@@ -78,12 +78,42 @@ parse_interpreter(const char *cmd, char **name, char **opts)
 	return path;
 }
 
+static char *quote_arg_msys2(const char *arg)
+{
+	int escapes = 0, has_white_space = 0;
+	const char *p;
+	char *q, *result;
+
+	for (p = arg; *p; p++)
+		if (isspace(*p))
+			has_white_space = 1;
+		else if (*p == '"' || *p == '\\')
+			escapes++;
+
+	if (!escapes && !has_white_space && p != arg)
+		return (char *)arg;
+
+	q = result = malloc(p - arg + escapes + 3);
+	if (!q)
+		return (char *)arg; /* out of memory: punt */
+	*(q++) = '"';
+	for (p = arg; *p; p++) {
+		if (*p == '"' || *p == '\\')
+			*(q++) = '\\';
+		*(q++) = *p;
+	}
+	*(q++) = '"';
+	*q = '\0';
+
+	return result;
+}
+
 /*
  * See http://msdn2.microsoft.com/en-us/library/17w5ykft(vs.71).aspx
  * (Parsing C++ Command-Line Arguments)
  */
 static char *
-quote_arg(const char *arg)
+quote_arg_mingw(const char *arg)
 {
 	int len = 0, n = 0;
 	int force_quotes = 0;
@@ -188,13 +218,34 @@ find_first_executable(const char *name)
 	return exe_path;
 }
 
+static inline int is_slash(char c)
+{
+	return c == '/' || c == '\\';
+}
+
+static int is_msys2_cmd(const char *cmd)
+{
+	int len = strlen(cmd);
+
+	if (len < 9)
+		return 0;
+
+	while (len-- && !is_slash(cmd[len]))
+		; /* do nothing */
+	return len > 7 && is_slash(cmd[len - 8]) && is_slash(cmd[len - 4]) &&
+		!_strnicmp(cmd + len - 7, "usr", 3) &&
+		!_strnicmp(cmd + len - 3, "bin", 3);
+}
+
 static intptr_t
 spawnveq(int mode, const char *path, char *const *argv, char *const *env)
 {
 	char **new_argv;
 	int i, argc = -1;
 	intptr_t ret;
+	char *(*quote_arg)(const char *);
 
+	quote_arg = is_msys2_cmd(path) ? quote_arg_msys2 : quote_arg_mingw;
 	while (argv[++argc])
 		;
 
