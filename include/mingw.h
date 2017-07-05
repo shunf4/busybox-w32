@@ -445,8 +445,23 @@ int utimes(const char *file_name, const struct timeval times[2]);
 /*
  * dirent.h
  */
+struct dirent {
+	char d_name[PATH_MAX];
+};
+
+struct DIR {
+	struct dirent dirent;
+	HANDLE handle;
+	WIN32_FIND_DATA find_data;
+};
+typedef struct DIR DIR;
+
 DIR *mingw_opendir(const char *path);
+struct dirent *mingw_readdir(DIR *dir);
+int mingw_closedir(DIR *dir);
 #define opendir mingw_opendir
+#define readdir mingw_readdir
+#define closedir mingw_closedir
 
 /*
  * MinGW specific
