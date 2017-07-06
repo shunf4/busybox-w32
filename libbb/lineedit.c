@@ -1859,6 +1859,59 @@ static void ask_terminal(void)
 #define ask_terminal() ((void)0)
 #endif
 
+#if ENABLE_PLATFORM_MINGW32
+static inline char *current_nanosecond(void)
+{
+	static char buf[32];
+	static LARGE_INTEGER frequency, current;
+
+	if (!frequency.QuadPart) {
+		if (!QueryPerformanceFrequency(&frequency))
+			buf[0] = '\0';
+		else {
+			buf[0] = '0';
+			buf[1] = '\0';
+			QueryPerformanceCounter(&current);
+		}
+	} else {
+		long long diff = current.QuadPart;
+
+		if (!QueryPerformanceCounter(&current))
+			buf[0] = '\0';
+		else {
+			int i;
+			long long j = 1;
+
+			diff = (current.QuadPart - diff) * 1000000000ll
+				/ frequency.QuadPart;
+
+			/* count digits */
+			for (i = 10, j = 10000000000ll; diff >= j; i++)
+				j *= 10;
+
+			/* make room for ticks */
+			j = 0;
+			i += (i - 1) / 3;
+
+			buf[i] = '\0';
+			while (i-- > 0) {
+				/* print . between seconds and nanos, ' every third digit */
+				if (!((j++) % 3)) {
+					if (j == 10)
+						buf[i--] = '.';
+					else if (j > 1)
+						buf[i--] = '\'';
+				}
+
+				buf[i] = '0' + (diff % 10);
+				diff /= 10;
+			}
+		}
+	}
+	return buf;
+}
+#endif
+
 /* Note about multi-line PS1 (e.g. "\n\w \u@\h\n> ") and prompt redrawing:
  *
  * If the prompt has any newlines, after we print it once we use only its last
@@ -1953,6 +2006,7 @@ static void parse_and_put_prompt(const char *prmt_ptr)
  *	format is passed to strftime(3).
  *	An empty format results in a locale-specific time representation.
  *	The braces are required.
+ * \P	nanoseconds since previous prompt (BusyBox-w32 extension).
  * Mishandled by bb_process_escape_sequence:
  * \v	version of bash (e.g., 2.00)
  */
@@ -1966,6 +2020,11 @@ static void parse_and_put_prompt(const char *prmt_ptr)
 				c = *prmt_ptr++;
 
 				switch (c) {
+# if ENABLE_PLATFORM_MINGW32
+				case 'P':
+					pbuf = current_nanosecond();
+					break;
+# endif
 # if ENABLE_USERNAME_OR_HOMEDIR
 				case 'u':
 					pbuf = user_buf ? user_buf : (char*)"";
