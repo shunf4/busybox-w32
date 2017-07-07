@@ -1445,5 +1445,14 @@ int mingw_chdir(const char *path)
 	if (!wpath)
 		return -1;
 
-	return _wchdir(wpath);
+	if (_wchdir(wpath)) {
+		wchar_t shortpath[PATH_MAX_LONG];
+		int saved_errno = errno;
+
+		if (GetShortPathNameW(wpath, shortpath, PATH_MAX_LONG))
+			return _wchdir(shortpath);
+		errno = saved_errno;
+		return -1;
+	}
+	return 0;
 }
