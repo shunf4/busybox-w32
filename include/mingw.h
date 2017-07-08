@@ -502,3 +502,5 @@ int err_win_to_posix(DWORD winerr);
 
 ULONGLONG CompatGetTickCount64(void);
 #define GetTickCount64 CompatGetTickCount64
+
+void initialize_critical_sections(void);
