@@ -1053,6 +1053,10 @@ int main(int argc UNUSED_PARAM, char **argv)
 	mallopt(M_TOP_PAD, 8 * 1024);
 #endif
 
+#if ENABLE_PLATFORM_MINGW32
+	initialize_critical_sections();
+#endif
+
 #if !BB_MMU
 	/* NOMMU re-exec trick sets high-order bit in first byte of name */
 	if (argv[0][0] & 0x80) {
