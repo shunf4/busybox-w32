@@ -446,14 +446,15 @@ int utimes(const char *file_name, const struct timeval times[2]);
 /*
  * dirent.h
  */
+#define PATH_MAX_LONG 4096
 struct dirent {
-	char d_name[PATH_MAX];
+	char d_name[PATH_MAX_LONG];
 };
 
 struct DIR {
 	struct dirent dirent;
 	HANDLE handle;
-	WIN32_FIND_DATA find_data;
+	WIN32_FIND_DATAW find_data;
 };
 typedef struct DIR DIR;
 
@@ -523,7 +524,7 @@ char **env_setenv(char **env, const char *name);
 const char *get_busybox_exec_path(void);
 void init_winsock(void);
 
-const char *mingw_pathconv(const char *path);
+wchar_t *mingw_pathconv(const char *path);
 char *file_is_win32_executable(const char *p);
 
 int err_win_to_posix(DWORD winerr);

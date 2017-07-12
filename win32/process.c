@@ -214,7 +214,6 @@ spawnveq(int mode, const char *path, char *const *argv, char *const *env)
 	int i, argc = 0;
 	intptr_t ret;
 
-	path = mingw_pathconv(path);
 	if (!argv) {
 		char *const empty_argv[] = { (char *)path, NULL };
 		return spawnve(mode, path, empty_argv, env);
