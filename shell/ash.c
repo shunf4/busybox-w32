@@ -210,6 +210,8 @@
 #define IF_BASH_PATTERN_SUBST       IF_ASH_BASH_COMPAT
 #define    BASH_SUBSTR          ENABLE_ASH_BASH_COMPAT
 #define IF_BASH_SUBSTR              IF_ASH_BASH_COMPAT
+#define    BASH_XTRACEFD        ENABLE_ASH_BASH_COMPAT
+#define IF_BASH_XTRACEFD            IF_ASH_BASH_COMPAT
 /* [[ EXPR ]] */
 #define    BASH_TEST2           (ENABLE_ASH_BASH_COMPAT * ENABLE_ASH_TEST)
 #define    BASH_SOURCE          ENABLE_ASH_BASH_COMPAT
@@ -2917,7 +2919,7 @@ cdcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 	goto docd;
 
  err:
-	ash_msg_and_raise_error("can't cd to %s", dest);
+	ash_msg_and_raise_error("can't cd to %s: %s", dest, strerror(errno));
 	/* NOTREACHED */
  out:
 	if (flags & CD_PRINT)
@@ -4031,8 +4033,10 @@ freejob(struct job *jp)
 static void
 xtcsetpgrp(int fd, pid_t pgrp)
 {
-	if (tcsetpgrp(fd, pgrp))
-		ash_msg_and_raise_error("can't set tty process group (%m)");
+	if (tcsetpgrp(fd, pgrp)) {
+		const char *err = strerror(errno);
+		ash_msg_and_raise_error("can't set tty process group (%s)", err);
+	}
 }
 
 /*
@@ -4244,15 +4248,19 @@ sprint_status48(char *s, int status, int sigonly)
 
 	col = 0;
 	if (!WIFEXITED(status)) {
-		if (JOBS && WIFSTOPPED(status))
+#if JOBS
+		if (WIFSTOPPED(status))
 			st = WSTOPSIG(status);
 		else
+#endif
 			st = WTERMSIG(status);
 		if (sigonly) {
 			if (st == SIGINT || st == SIGPIPE)
 				goto out;
-			if (JOBS && WIFSTOPPED(status))
+#if JOBS
+			if (WIFSTOPPED(status))
 				goto out;
+#endif
 		}
 		st &= 0x7f;
 //TODO: use bbox's get_signame? strsignal adds ~600 bytes to text+rodata
@@ -4501,8 +4509,10 @@ dowait(int block, struct job *job)
 		goto out;
 	}
 	/* The process wasn't found in job list */
-	if (JOBS && !WIFSTOPPED(status))
+#if JOBS
+	if (!WIFSTOPPED(status))
 		jobless--;
+#endif
  out:
 	INT_ON;
 
@@ -5709,7 +5719,7 @@ savefd(int from)
 	err = newfd < 0 ? errno : 0;
 	if (err != EBADF) {
 		if (err)
-			ash_msg_and_raise_error("%d: %m", from);
+			ash_msg_and_raise_error("%d: %s", from, strerror(errno));
 		close(from);
 		fcntl(newfd, F_SETFD, FD_CLOEXEC);
 	}
@@ -5724,7 +5734,7 @@ dup2_or_raise(int from, int to)
 	newfd = (from != to) ? dup2(from, to) : to;
 	if (newfd < 0) {
 		/* Happens when source fd is not open: try "echo >&99" */
-		ash_msg_and_raise_error("%d: %m", from);
+		ash_msg_and_raise_error("%d: %s", from, strerror(errno));
 	}
 	return newfd;
 }
@@ -5855,7 +5865,7 @@ redirect(union node *redir, int flags)
 			/* "echo >&10" and 10 is a fd opened to a sh script? */
 			if (is_hidden_fd(sv, right_fd)) {
 				errno = EBADF; /* as if it is closed */
-				ash_msg_and_raise_error("%d: %m", right_fd);
+				ash_msg_and_raise_error("%d: %s", right_fd, strerror(errno));
 			}
 			newfd = -1;
 		} else {
@@ -5889,7 +5899,7 @@ redirect(union node *redir, int flags)
 					if (newfd >= 0)
 						close(newfd);
 					errno = i;
-					ash_msg_and_raise_error("%d: %m", fd);
+					ash_msg_and_raise_error("%d: %s", fd, strerror(errno));
 					/* NOTREACHED */
 				}
 				/* EBADF: it is not open - good, remember to close it */
@@ -5905,8 +5915,9 @@ redirect(union node *redir, int flags)
 				if (is_hidden_fd(sv, fd))
 					i |= COPYFD_RESTORE;
 			}
-			if (fd == 2)
+			if (fd == preverrout_fd)
 				copied_fd2 = i;
+
 			sv->two_fd[sv_pos].orig = fd;
 			sv->two_fd[sv_pos].copy = i;
 			sv_pos++;
@@ -10052,6 +10063,7 @@ evalcommand(union node *cmd, int flags)
 	struct builtincmd *bcmd;
 	smallint cmd_is_exec;
 	smallint pseudovarflag = 0;
+	IF_BASH_XTRACEFD(const char *xtracefd;)
 
 	/* First expand the arguments. */
 	TRACE(("evalcommand(0x%lx, %d) called\n", (long)cmd, flags));
@@ -10097,6 +10109,10 @@ evalcommand(union node *cmd, int flags)
 	if (iflag && funcnest == 0 && argc > 0)
 		lastarg = nargv[-1];
 
+#ifdef BASH_XTRACEFD
+	xtracefd = lookupvar("BASH_XTRACEFD");
+	if (!xtracefd || (preverrout_fd = atoi(xtracefd)) < 0)
+#endif
 	preverrout_fd = 2;
 	expredir(cmd->ncmd.redirect);
 	status = redirectsafe(cmd->ncmd.redirect, REDIR_PUSH | REDIR_SAVEFD2);
@@ -10873,7 +10889,7 @@ setinputfile(const char *fname, int flags)
 		if (flags & INPUT_NOFILE_OK)
 			goto out;
 		exitstatus = 127;
-		ash_msg_and_raise_error("can't open '%s'", fname);
+		ash_msg_and_raise_error("can't open '%s': %s", fname, strerror(errno));
 	}
 	if (fd < 10)
 		fd = savefd(fd);
@@ -13737,10 +13753,10 @@ letcmd(int argc UNUSED_PARAM, char **argv)
  *      -p PROMPT       Display PROMPT on stderr (if input is from tty)
  *      -t SECONDS      Timeout after SECONDS (tty or pipe only)
  *      -u FD           Read from given FD instead of fd 0
+ *      -d DELIM        End on DELIM char, not newline
  * This uses unbuffered input, which may be avoidable in some cases.
  * TODO: bash also has:
  *      -a ARRAY        Read into array[0],[1],etc
- *      -d DELIM        End on DELIM char, not newline
  *      -e              Use line editing (tty only)
  */
 static int FAST_FUNC
@@ -13750,11 +13766,12 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 	char *opt_p = NULL;
 	char *opt_t = NULL;
 	char *opt_u = NULL;
+	char *opt_d = NULL;
 	int read_flags = 0;
 	const char *r;
 	int i;
 
-	while ((i = nextopt("p:u:rt:n:s")) != '\0') {
+	while ((i = nextopt("p:u:rt:n:sd:")) != '\0') {
 		switch (i) {
 		case 'p':
 			opt_p = optionarg;
@@ -13774,6 +13791,9 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 		case 'u':
 			opt_u = optionarg;
 			break;
+		case 'd':
+			opt_d = optionarg;
+			break;
 		default:
 			break;
 		}
@@ -13791,7 +13811,8 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 		opt_n,
 		opt_p,
 		opt_t,
-		opt_u
+		opt_u,
+		opt_d
 	);
 	INT_ON;
 
