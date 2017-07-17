@@ -210,6 +210,8 @@
 #define IF_BASH_PATTERN_SUBST       IF_ASH_BASH_COMPAT
 #define    BASH_SUBSTR          ENABLE_ASH_BASH_COMPAT
 #define IF_BASH_SUBSTR              IF_ASH_BASH_COMPAT
+#define    BASH_XTRACEFD        ENABLE_ASH_BASH_COMPAT
+#define IF_BASH_XTRACEFD            IF_ASH_BASH_COMPAT
 /* [[ EXPR ]] */
 #define    BASH_TEST2           (ENABLE_ASH_BASH_COMPAT * ENABLE_ASH_TEST)
 #define    BASH_SOURCE          ENABLE_ASH_BASH_COMPAT
@@ -5913,8 +5915,9 @@ redirect(union node *redir, int flags)
 				if (is_hidden_fd(sv, fd))
 					i |= COPYFD_RESTORE;
 			}
-			if (fd == 2)
+			if (fd == preverrout_fd)
 				copied_fd2 = i;
+
 			sv->two_fd[sv_pos].orig = fd;
 			sv->two_fd[sv_pos].copy = i;
 			sv_pos++;
@@ -10060,6 +10063,7 @@ evalcommand(union node *cmd, int flags)
 	struct builtincmd *bcmd;
 	smallint cmd_is_exec;
 	smallint pseudovarflag = 0;
+	IF_BASH_XTRACEFD(const char *xtracefd;)
 
 	/* First expand the arguments. */
 	TRACE(("evalcommand(0x%lx, %d) called\n", (long)cmd, flags));
@@ -10105,6 +10109,10 @@ evalcommand(union node *cmd, int flags)
 	if (iflag && funcnest == 0 && argc > 0)
 		lastarg = nargv[-1];
 
+#ifdef BASH_XTRACEFD
+	xtracefd = lookupvar("BASH_XTRACEFD");
+	if (!xtracefd || (preverrout_fd = atoi(xtracefd)) < 0)
+#endif
 	preverrout_fd = 2;
 	expredir(cmd->ncmd.redirect);
 	status = redirectsafe(cmd->ncmd.redirect, REDIR_PUSH | REDIR_SAVEFD2);
