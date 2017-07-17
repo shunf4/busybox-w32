@@ -451,13 +451,15 @@ DIR *mingw_opendir(const char *path);
  * MinGW specific
  */
 #define is_dir_sep(c) ((c) == '/' || (c) == '\\')
+#ifndef PRIuMAX
 #define PRIuMAX "I64u"
+#endif
 
 pid_t FAST_FUNC mingw_spawn(char **argv);
-intptr_t FAST_FUNC mingw_spawn_proc(char **argv);
-int mingw_execv(const char *cmd, const char *const *argv);
-int mingw_execvp(const char *cmd, const char *const *argv);
-int mingw_execve(const char *cmd, const char *const *argv, const char *const *envp);
+intptr_t FAST_FUNC mingw_spawn_proc(const char **argv);
+int mingw_execv(const char *cmd, char *const *argv);
+int mingw_execvp(const char *cmd, char *const *argv);
+int mingw_execve(const char *cmd, char *const *argv, char *const *envp);
 #define spawn mingw_spawn
 #define execvp mingw_execvp
 #define execve mingw_execve
@@ -467,11 +469,39 @@ const char * next_path_sep(const char *path);
 #define has_dos_drive_prefix(path) (isalpha(*(path)) && (path)[1] == ':')
 #define is_absolute_path(path) ((path)[0] == '/' || (path)[0] == '\\' || has_dos_drive_prefix(path))
 
+/* Ensure that isatty(fd) returns 0 for the NUL device */
+static inline int mingw_isatty(int fd)
+{
+	int result = _isatty(fd);
+
+	if (result) {
+		HANDLE handle = (HANDLE) _get_osfhandle(fd);
+		CONSOLE_SCREEN_BUFFER_INFO sbi;
+		DWORD mode;
+
+	        if (handle == INVALID_HANDLE_VALUE)
+	                return 0;
+
+	        /* check if its a device (i.e. console, printer, serial port) */
+	        if (GetFileType(handle) != FILE_TYPE_CHAR)
+	                return 0;
+
+		if (!fd) {
+			if (!GetConsoleMode(handle, &mode))
+				return 0;
+		} else if (!GetConsoleScreenBufferInfo(handle, &sbi))
+			return 0;
+	}
+
+	return result;
+}
+#define isatty mingw_isatty
+
 /*
  * helpers
  */
 
-char **copy_environ(const char *const *env);
+char **copy_environ(char *const *env);
 void free_environ(char **env);
 char **env_setenv(char **env, const char *name);
 

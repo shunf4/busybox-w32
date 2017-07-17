@@ -5686,6 +5686,16 @@ openredirect(union node *redir)
 		/* FALLTHROUGH */
 	case NCLOBBER:
 		f = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+#if ENABLE_PLATFORM_MINGW32
+		if (f < 0 && errno == EACCES) {
+			f = open(fname, O_WRONLY, 0666);
+			if (f >= 0 && ftruncate(f, 0) < 0) {
+				int saved = errno;
+				close(f);
+				errno = saved;
+			}
+		}
+#endif
 		if (f < 0)
 			goto ecreate;
 		break;
@@ -8159,7 +8169,7 @@ static void shellexec(char *prog, char **argv, const char *path, int idx)
 		e = errno;
 #if ENABLE_PLATFORM_MINGW32 && ENABLE_FEATURE_SH_STANDALONE
 	} else if (strcmp(argv[0], "busybox") == 0) {
-		tryexec(-1, bb_busybox_exec_path, argv, envp);
+		tryexec(-1, (char *)bb_busybox_exec_path, argv, envp);
 		e = errno;
 #endif
 	} else {

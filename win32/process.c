@@ -208,14 +208,14 @@ quote_arg(const char *arg)
 }
 
 static intptr_t
-spawnveq(int mode, const char *path, const char *const *argv, const char *const *env)
+spawnveq(int mode, const char *path, char *const *argv, char *const *env)
 {
 	char **new_argv;
 	int i, argc = 0;
 	intptr_t ret;
 
 	if (!argv) {
-		const char *empty_argv[] = { path, NULL };
+		char *const empty_argv[] = { (char *)path, NULL };
 		return spawnve(mode, path, empty_argv, env);
 	}
 
@@ -227,7 +227,7 @@ spawnveq(int mode, const char *path, const char *const *argv, const char *const 
 	for (i = 0;i < argc;i++)
 		new_argv[i] = quote_arg(argv[i]);
 	new_argv[argc] = NULL;
-	ret = spawnve(mode, path, (const char *const *)new_argv, env);
+	ret = spawnve(mode, path, new_argv, env);
 	for (i = 0;i < argc;i++)
 		if (new_argv[i] != argv[i])
 			free(new_argv[i]);
@@ -238,8 +238,8 @@ spawnveq(int mode, const char *path, const char *const *argv, const char *const 
 static intptr_t
 mingw_spawn_applet(int mode,
 		   const char *applet,
-		   const char *const *argv,
-		   const char *const *envp)
+		   char *const *argv,
+		   char *const *envp)
 {
 	char **env = copy_environ(envp);
 	char path[MAX_PATH+20];
@@ -247,19 +247,19 @@ mingw_spawn_applet(int mode,
 
 	sprintf(path, "BUSYBOX_APPLET_NAME=%s", applet);
 	env = env_setenv(env, path);
-	ret = spawnveq(mode, get_busybox_exec_path(), argv, (const char *const *)env);
+	ret = spawnveq(mode, (char *)get_busybox_exec_path(), argv, env);
 	free_environ(env);
 	return ret;
 }
 
 static intptr_t
-mingw_spawn_interpreter(int mode, const char *prog, const char *const *argv, const char *const *envp)
+mingw_spawn_interpreter(int mode, const char *prog, char *const *argv, char *const *envp)
 {
 	intptr_t ret;
 	char **opts;
 	int nopts;
 	const char *interpr = parse_interpreter(prog, &opts, &nopts);
-	const char **new_argv;
+	char **new_argv;
 	int argc = 0;
 
 	if (!interpr)
@@ -271,10 +271,10 @@ mingw_spawn_interpreter(int mode, const char *prog, const char *const *argv, con
 	new_argv = malloc(sizeof(*argv)*(argc+nopts+2));
 	memcpy(new_argv+1, opts, sizeof(*opts)*nopts);
 	memcpy(new_argv+nopts+2, argv+1, sizeof(*argv)*argc);
-	new_argv[nopts+1] = prog; /* pass absolute path */
+	new_argv[nopts+1] = (char *)prog; /* pass absolute path */
 
 	if (ENABLE_FEATURE_PREFER_APPLETS && find_applet_by_name(interpr) >= 0) {
-		new_argv[0] = interpr;
+		new_argv[0] = (char *)interpr;
 		ret = mingw_spawn_applet(mode, interpr, new_argv, envp);
 	}
 	else {
@@ -297,7 +297,7 @@ mingw_spawn_interpreter(int mode, const char *prog, const char *const *argv, con
 }
 
 static intptr_t
-mingw_spawn_1(int mode, const char *cmd, const char *const *argv, const char *const *envp)
+mingw_spawn_1(int mode, const char *cmd, char *const *argv, char *const *envp)
 {
 	intptr_t ret;
 
@@ -334,30 +334,28 @@ mingw_spawn(char **argv)
 {
 	intptr_t ret;
 
-	ret = mingw_spawn_1(P_NOWAIT, argv[0], (const char *const *)argv,
-			(const char *const *)environ);
+	ret = mingw_spawn_1(P_NOWAIT, argv[0], (char *const *)argv, environ);
 
 	return ret == -1 ? -1 : GetProcessId((HANDLE)ret);
 }
 
 intptr_t FAST_FUNC
-mingw_spawn_proc(char **argv)
+mingw_spawn_proc(const char **argv)
 {
-	return mingw_spawn_1(P_NOWAIT, argv[0], (const char *const *)argv,
-			(const char *const *)environ);
+	return mingw_spawn_1(P_NOWAIT, argv[0], (char *const *)argv, environ);
 }
 
 int
-mingw_execvp(const char *cmd, const char *const *argv)
+mingw_execvp(const char *cmd, char *const *argv)
 {
-	int ret = (int)mingw_spawn_1(P_WAIT, cmd, argv, (const char *const *)environ);
+	int ret = (int)mingw_spawn_1(P_WAIT, cmd, argv, environ);
 	if (ret != -1)
 		exit(ret);
 	return ret;
 }
 
 int
-mingw_execve(const char *cmd, const char *const *argv, const char *const *envp)
+mingw_execve(const char *cmd, char *const *argv, char *const *envp)
 {
 	int ret;
 	int mode = P_WAIT;
@@ -380,9 +378,9 @@ mingw_execve(const char *cmd, const char *const *argv, const char *const *envp)
 }
 
 int
-mingw_execv(const char *cmd, const char *const *argv)
+mingw_execv(const char *cmd, char *const *argv)
 {
-	return mingw_execve(cmd, argv, (const char *const *)environ);
+	return mingw_execve(cmd, argv, environ);
 }
 
 /* POSIX version in libbb/procps.c */
@@ -417,13 +415,173 @@ procps_status_t* FAST_FUNC procps_scan(procps_status_t* sp, int flags UNUSED_PAR
 	return sp;
 }
 
+/*
+ * Terminates the process corresponding to the process ID and all of its
+ * directly and indirectly spawned subprocesses.
+ *
+ * This way of terminating the processes is not gentle: the processes get
+ * no chance of cleaning up after themselves (closing file handles, removing
+ * .lock files, terminating spawned processes (if any), etc).
+ */
+static int terminate_process_tree(HANDLE main_process, int exit_status)
+{
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	PROCESSENTRY32 entry;
+	DWORD pids[16384];
+	int max_len = sizeof(pids) / sizeof(*pids), i, len, ret = 0;
+	pid_t pid = GetProcessId(main_process);
+
+	pids[0] = (DWORD)pid;
+	len = 1;
+
+	/*
+	 * Even if Process32First()/Process32Next() seem to traverse the
+	 * processes in topological order (i.e. parent processes before
+	 * child processes), there is nothing in the Win32 API documentation
+	 * suggesting that this is guaranteed.
+	 *
+	 * Therefore, run through them at least twice and stop when no more
+	 * process IDs were added to the list.
+	 */
+	for (;;) {
+		int orig_len = len;
+
+		memset(&entry, 0, sizeof(entry));
+		entry.dwSize = sizeof(entry);
+
+		if (!Process32First(snapshot, &entry))
+			break;
+
+		do {
+			for (i = len - 1; i >= 0; i--) {
+				if (pids[i] == entry.th32ProcessID)
+					break;
+				if (pids[i] == entry.th32ParentProcessID)
+					pids[len++] = entry.th32ProcessID;
+			}
+		} while (len < max_len && Process32Next(snapshot, &entry));
+
+		if (orig_len == len || len >= max_len)
+			break;
+	}
+
+	for (i = len - 1; i > 0; i--) {
+		HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, pids[i]);
+
+		if (process) {
+			if (!TerminateProcess(process, exit_status))
+				ret = -1;
+			CloseHandle(process);
+		}
+	}
+	if (!TerminateProcess(main_process, exit_status))
+		ret = -1;
+	CloseHandle(main_process);
+
+	return ret;
+}
+
+/**
+ * Determine whether a process runs in the same architecture as the current
+ * one. That test is required before we assume that GetProcAddress() returns
+ * a valid address *for the target process*.
+ */
+static inline int process_architecture_matches_current(HANDLE process)
+{
+	static BOOL current_is_wow = -1;
+	BOOL is_wow;
+
+	if (current_is_wow == -1 &&
+	    !IsWow64Process (GetCurrentProcess(), &current_is_wow))
+		current_is_wow = -2;
+	if (current_is_wow == -2)
+		return 0; /* could not determine current process' WoW-ness */
+	if (!IsWow64Process (process, &is_wow))
+		return 0; /* cannot determine */
+	return is_wow == current_is_wow;
+}
+
+/**
+ * This function tries to terminate a Win32 process, as gently as possible.
+ *
+ * At first, we will attempt to inject a thread that calls ExitProcess(). If
+ * that fails, we will fall back to terminating the entire process tree.
+ *
+ * Note: as kernel32.dll is loaded before any process, the other process and
+ * this process will have ExitProcess() at the same address.
+ *
+ * This function expects the process handle to have the access rights for
+ * CreateRemoteThread(): PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION,
+ * PROCESS_VM_OPERATION, PROCESS_VM_WRITE, and PROCESS_VM_READ.
+ *
+ * The idea comes from the Dr Dobb's article "A Safer Alternative to
+ * TerminateProcess()" by Andrew Tucker (July 1, 1999),
+ * http://www.drdobbs.com/a-safer-alternative-to-terminateprocess/184416547
+ *
+ * If this method fails, we fall back to running terminate_process_tree().
+ */
+static int exit_process(HANDLE process, int exit_code)
+{
+	DWORD code;
+
+	if (GetExitCodeProcess(process, &code) && code == STILL_ACTIVE) {
+		static int initialized;
+		static LPTHREAD_START_ROUTINE exit_process_address;
+		PVOID arg = (PVOID)(intptr_t)exit_code;
+		DWORD thread_id;
+		HANDLE thread = NULL;
+
+		if (!initialized) {
+			HINSTANCE kernel32 = GetModuleHandle("kernel32");
+			if (!kernel32) {
+				fprintf(stderr, "BUG: cannot find kernel32");
+				return -1;
+			}
+			exit_process_address = (LPTHREAD_START_ROUTINE)
+				GetProcAddress(kernel32, "ExitProcess");
+			initialized = 1;
+		}
+		if (!exit_process_address ||
+		    !process_architecture_matches_current(process))
+			return terminate_process_tree(process, exit_code);
+
+		thread = CreateRemoteThread(process, NULL, 0,
+					    exit_process_address,
+					    arg, 0, &thread_id);
+		if (thread) {
+			DWORD result;
+
+			CloseHandle(thread);
+			/*
+			 * If the process survives for 10 seconds (a completely
+			 * arbitrary value picked from thin air), fall back to
+			 * killing the process tree via TerminateProcess().
+			 */
+			result = WaitForSingleObject(process, 10000);
+			if (result == WAIT_OBJECT_0) {
+				CloseHandle(process);
+				return 0;
+			}
+		}
+
+		return terminate_process_tree(process, exit_code);
+	}
+
+	return 0;
+}
+
 int kill(pid_t pid, int sig)
 {
 	HANDLE h;
 
 	if (pid > 0 && sig == SIGTERM) {
+		if ((h = OpenProcess(SYNCHRONIZE | PROCESS_CREATE_THREAD |
+				PROCESS_QUERY_INFORMATION |
+				PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+				PROCESS_VM_READ, FALSE, pid)))
+			return exit_process(h, 128 + sig);
 		if ((h=OpenProcess(PROCESS_TERMINATE, FALSE, pid)) != NULL &&
-				TerminateProcess(h, 0)) {
+				terminate_process_tree(h, 128 + sig)) {
 			CloseHandle(h);
 			return 0;
 		}
