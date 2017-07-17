@@ -1079,7 +1079,7 @@ int main(int argc UNUSED_PARAM, char **argv)
 	if (ENABLE_PLATFORM_MINGW32) {
 		const char *applet_name_env = getenv("BUSYBOX_APPLET_NAME");
 		if (applet_name_env && *applet_name_env) {
-			applet_name = applet_name_env;
+			applet_name = xstrdup(applet_name_env);
 			unsetenv("BUSYBOX_APPLET_NAME");
 		}
 		else if ( argv[1] && argv[2] && strcmp(argv[1], "--busybox") == 0 ) {
