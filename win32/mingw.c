@@ -205,6 +205,12 @@ wchar_t *mingw_pathconv(const char *path)
 		const char *exec_path = bb_busybox_exec_path;
 		size_t len = strlen(exec_path);
 
+		/* skip \\?\ prefix, if any */
+		if (!strncmp(exec_path, "\\\\?\\", 4)) {
+			exec_path += 4;
+			len -= 4;
+		}
+
 		if (len > 5 && !_strnicmp(exec_path + len - 4, ".exe", 4)) {
 			len -= 3;
 			while (--len && !is_dir_sep(exec_path[len]))
