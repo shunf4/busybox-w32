@@ -8189,7 +8189,7 @@ static void shellexec(char *prog, char **argv, const char *path, int idx)
 		e = errno;
 #if ENABLE_PLATFORM_MINGW32 && ENABLE_FEATURE_SH_STANDALONE
 	} else if (strcmp(argv[0], "busybox") == 0) {
-		tryexec(-1, bb_busybox_exec_path, argv, envp);
+		tryexec(-1, (char *)bb_busybox_exec_path, argv, envp);
 		e = errno;
 #endif
 	} else {
