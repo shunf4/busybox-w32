@@ -482,7 +482,7 @@ static void conv_c(PR *pr, unsigned char *p)
 		*pr->cchar = 'c';
 		printf(pr->fmt, *p);
 	} else {
-		sprintf(buf, "%03o", (int) *p);
+		sprintf(buf, "%03o", (unsigned int) *p);
 		str = buf;
  strpr:
 		*pr->cchar = 's';
