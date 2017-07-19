@@ -2026,16 +2026,28 @@ extern struct globals *const ptr_to_globals;
 	} \
 } while (0)
 
+#if ENABLE_PLATFORM_MINGW32
+#ifdef _WIN64
+#define MINGW_PREFIX "/mingw64"
+#else
+#define MINGW_PREFIX "/mingw32"
+#endif
+#define MINGW_PREFIX_OFF 8
+#else
+#define MINGW_PREFIX ""
+#define MINGW_PREFIX_OFF 0
+#endif
+
 /* You can change LIBBB_DEFAULT_LOGIN_SHELL, but don't use it,
  * use bb_default_login_shell and following defines.
  * If you change LIBBB_DEFAULT_LOGIN_SHELL,
  * don't forget to change increment constant. */
-#define LIBBB_DEFAULT_LOGIN_SHELL  "-/bin/sh"
+#define LIBBB_DEFAULT_LOGIN_SHELL  "-" MINGW_PREFIX "/bin/sh"
 extern const char bb_default_login_shell[] ALIGN1;
 /* "/bin/sh" */
 #define DEFAULT_SHELL              (bb_default_login_shell+1)
 /* "sh" */
-#define DEFAULT_SHELL_SHORT_NAME   (bb_default_login_shell+6)
+#define DEFAULT_SHELL_SHORT_NAME   (bb_default_login_shell+6+MINGW_PREFIX_OFF)
 
 /* The following devices are the same on all systems.  */
 #define CURRENT_TTY "/dev/tty"
