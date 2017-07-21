@@ -3,7 +3,7 @@
 
 #define WARGV_OOM ((void *)(intptr_t)-1ll)
 
-static wchar_t **argv_to_wargv(char *const *argv)
+static wchar_t **argv_to_wargv(char *const *argv, const char *prepend)
 {
 	size_t size = 0, count = 1;
 	wchar_t **w0, *w1, **wargv;
@@ -12,6 +12,10 @@ static wchar_t **argv_to_wargv(char *const *argv)
 	if (!argv)
 		return NULL;
 
+	if (prepend) {
+		count++;
+		size += MultiByteToWideChar(CP_UTF8, 0, prepend, -1, NULL, 0);
+	}
 	for (i = 0; argv[i]; i++) {
 		count++;
 		size += MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, NULL, 0);
@@ -21,6 +25,10 @@ static wchar_t **argv_to_wargv(char *const *argv)
 		return WARGV_OOM;
 	w0 = wargv;
 	w1 = (void *)(w0 + count);
+	if (prepend) {
+		*(w0++) = w1;
+		w1 += MultiByteToWideChar(CP_UTF8, 0, prepend, -1, w1, size);
+	}
 	for (i = 0; argv[i]; i++) {
 		*(w0++) = w1;
 		w1 += MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, w1, size);
@@ -122,11 +130,31 @@ static intptr_t mingw_spawnve(int mode,
 	intptr_t ret;
 
 	wcmd = mingw_pathconv(cmd);
-	wargv = argv_to_wargv(argv);
-	wenv = argv_to_wargv(env);
+	wargv = argv_to_wargv(argv, NULL);
+	wenv = argv_to_wargv(env, NULL);
 	if (!wcmd || wargv == WARGV_OOM || wenv == WARGV_OOM) {
 		errno = ENOMEM;
 		return -1;
+	}
+
+	/*
+	 * When /bin/<command> does not exist, and <command> is an applet,
+	 * run that applet instead.
+	 */
+	if (!strncmp(cmd, "/bin/", 5) &&
+			GetFileAttributesW(wcmd) == INVALID_FILE_ATTRIBUTES &&
+			find_applet_by_name(cmd + 5) >= 0) {
+		if (!argv[0] || (strcmp(argv[0], cmd) &&
+					strcmp(argv[0], cmd + 5))) {
+			/* argv[0] is different from cmd, let's shift in cmd */
+			free(wargv);
+			wargv = argv_to_wargv(argv, cmd + 5);
+			if (wargv == WARGV_OOM) {
+				errno = ENOMEM;
+				return -1;
+			}
+		}
+		wcmd = mingw_pathconv(get_busybox_exec_path());
 	}
 
 	/*
