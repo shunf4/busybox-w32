@@ -5913,12 +5913,10 @@ static void
 redirect(union node *redir, int flags)
 {
 	struct redirtab *sv;
-	int sv_pos;
 
 	if (!redir)
 		return;
 
-	sv_pos = 0;
 	sv = NULL;
 	INT_OFF;
 	if (flags & REDIR_PUSH)
