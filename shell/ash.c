@@ -209,6 +209,8 @@
 #define IF_BASH_PATTERN_SUBST       IF_ASH_BASH_COMPAT
 #define    BASH_SUBSTR          ENABLE_ASH_BASH_COMPAT
 #define IF_BASH_SUBSTR              IF_ASH_BASH_COMPAT
+#define    BASH_XTRACEFD        ENABLE_ASH_BASH_COMPAT
+#define IF_BASH_XTRACEFD            IF_ASH_BASH_COMPAT
 /* [[ EXPR ]] */
 #define    BASH_TEST2           (ENABLE_ASH_BASH_COMPAT * ENABLE_ASH_TEST)
 #define    BASH_SOURCE          ENABLE_ASH_BASH_COMPAT
@@ -2952,7 +2954,7 @@ cdcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 	goto docd;
 
  err:
-	ash_msg_and_raise_error("can't cd to %s", dest);
+	ash_msg_and_raise_error("can't cd to %s: %s", dest, strerror(errno));
 	/* NOTREACHED */
  out:
 	if (flags & CD_PRINT)
@@ -5915,12 +5917,10 @@ static void
 redirect(union node *redir, int flags)
 {
 	struct redirtab *sv;
-	int sv_pos;
 
 	if (!redir)
 		return;
 
-	sv_pos = 0;
 	sv = NULL;
 	INT_OFF;
 	if (flags & REDIR_PUSH)
@@ -10198,6 +10198,7 @@ evalcommand(union node *cmd, int flags)
 	int status;
 	char **nargv;
 	smallint cmd_is_exec;
+	IF_BASH_XTRACEFD(const char *xtracefd;)
 
 	/* First expand the arguments. */
 	TRACE(("evalcommand(0x%lx, %d) called\n", (long)cmd, flags));
@@ -10249,6 +10250,10 @@ evalcommand(union node *cmd, int flags)
 
 	expredir(cmd->ncmd.redirect);
 	redir_stop = pushredir(cmd->ncmd.redirect);
+#ifdef BASH_XTRACEFD
+	xtracefd = lookupvar("BASH_XTRACEFD");
+	if (!xtracefd || (preverrout_fd = atoi(xtracefd)) < 0)
+#endif
 	preverrout_fd = 2;
 	status = redirectsafe(cmd->ncmd.redirect, REDIR_PUSH | REDIR_SAVEFD2);
 
@@ -11026,7 +11031,7 @@ setinputfile(const char *fname, int flags)
 		if (flags & INPUT_NOFILE_OK)
 			goto out;
 		exitstatus = 127;
-		ash_msg_and_raise_error("can't open '%s'", fname);
+		ash_msg_and_raise_error("can't open '%s': %s", fname, strerror(errno));
 	}
 	if (fd < 10)
 		fd = savefd(fd);
@@ -13903,10 +13908,10 @@ letcmd(int argc UNUSED_PARAM, char **argv)
  *      -p PROMPT       Display PROMPT on stderr (if input is from tty)
  *      -t SECONDS      Timeout after SECONDS (tty or pipe only)
  *      -u FD           Read from given FD instead of fd 0
+ *      -d DELIM        End on DELIM char, not newline
  * This uses unbuffered input, which may be avoidable in some cases.
  * TODO: bash also has:
  *      -a ARRAY        Read into array[0],[1],etc
- *      -d DELIM        End on DELIM char, not newline
  *      -e              Use line editing (tty only)
  */
 static int FAST_FUNC
@@ -13916,11 +13921,12 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 	char *opt_p = NULL;
 	char *opt_t = NULL;
 	char *opt_u = NULL;
+	char *opt_d = NULL;
 	int read_flags = 0;
 	const char *r;
 	int i;
 
-	while ((i = nextopt("p:u:rt:n:s")) != '\0') {
+	while ((i = nextopt("p:u:rt:n:sd:")) != '\0') {
 		switch (i) {
 		case 'p':
 			opt_p = optionarg;
@@ -13940,6 +13946,9 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 		case 'u':
 			opt_u = optionarg;
 			break;
+		case 'd':
+			opt_d = optionarg;
+			break;
 		default:
 			break;
 		}
@@ -13957,7 +13966,8 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 		opt_n,
 		opt_p,
 		opt_t,
-		opt_u
+		opt_u,
+		opt_d
 	);
 	INT_ON;
 
