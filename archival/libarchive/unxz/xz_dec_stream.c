@@ -423,15 +423,6 @@ static enum xz_ret XZ_FUNC dec_stream_footer(struct xz_dec *s)
 	if (!memeq(s->temp.buf + 10, FOOTER_MAGIC, FOOTER_MAGIC_SIZE))
 		return XZ_DATA_ERROR;
 
-#if defined(__GNUC__)
-	/*
-	 * The temp.buf field is put just after two fields of type size_t for
-	 * the express purpose of avoiding alignment issues. But GCC complains
-	 * about it nevertheless... so: shut GCC up for a few lines.
-	 */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
 	if (xz_crc32(s->temp.buf + 4, 6, 0) != get_le32(s->temp.buf))
 		return XZ_DATA_ERROR;
 
@@ -442,9 +433,6 @@ static enum xz_ret XZ_FUNC dec_stream_footer(struct xz_dec *s)
 	 */
 	if ((s->index.size >> 2) != get_le32(s->temp.buf + 4))
 		return XZ_DATA_ERROR;
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 	if (s->temp.buf[8] != 0 || s->temp.buf[9] != s->check_type)
 		return XZ_DATA_ERROR;
