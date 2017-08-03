@@ -74,7 +74,7 @@ int FAST_FUNC remove_file(const char *path, int flags)
 		}
 
 		if (rmdir(path) < 0) {
-			bb_perror_msg("can't remove '%s'", path);
+			bb_perror_msg("can't remove '%s': %s", path, strerror(errno));
 			return -1;
 		}
 
