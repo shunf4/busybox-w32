@@ -209,6 +209,8 @@
 #define IF_BASH_PATTERN_SUBST       IF_ASH_BASH_COMPAT
 #define    BASH_SUBSTR          ENABLE_ASH_BASH_COMPAT
 #define IF_BASH_SUBSTR              IF_ASH_BASH_COMPAT
+#define    BASH_XTRACEFD        ENABLE_ASH_BASH_COMPAT
+#define IF_BASH_XTRACEFD            IF_ASH_BASH_COMPAT
 /* [[ EXPR ]] */
 #define    BASH_TEST2           (ENABLE_ASH_BASH_COMPAT * ENABLE_ASH_TEST)
 #define    BASH_SOURCE          ENABLE_ASH_BASH_COMPAT
@@ -10198,6 +10200,7 @@ evalcommand(union node *cmd, int flags)
 	int status;
 	char **nargv;
 	smallint cmd_is_exec;
+	IF_BASH_XTRACEFD(const char *xtracefd;)
 
 	/* First expand the arguments. */
 	TRACE(("evalcommand(0x%lx, %d) called\n", (long)cmd, flags));
@@ -10249,6 +10252,10 @@ evalcommand(union node *cmd, int flags)
 
 	expredir(cmd->ncmd.redirect);
 	redir_stop = pushredir(cmd->ncmd.redirect);
+#ifdef BASH_XTRACEFD
+	xtracefd = lookupvar("BASH_XTRACEFD");
+	if (!xtracefd || (preverrout_fd = atoi(xtracefd)) < 0)
+#endif
 	preverrout_fd = 2;
 	status = redirectsafe(cmd->ncmd.redirect, REDIR_PUSH | REDIR_SAVEFD2);
 
