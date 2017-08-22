@@ -60,6 +60,13 @@
 //config:	depends on XARGS
 //config:	help
 //config:	Support -I STR and -i[STR] options.
+//config:
+//config:config FEATURE_XARGS_SUPPORT_PARALLEL
+//config:	bool "Enable -P N: processes to run in parallel"
+//config:	default y
+//config:	depends on XARGS
+//config:	help
+//config:	Support -P N option.
 
 //applet:IF_XARGS(APPLET_NOEXEC(xargs, xargs, BB_DIR_USR_BIN, BB_SUID_DROP, xargs))
 
@@ -103,6 +110,10 @@ struct globals {
 #endif
 	const char *eof_str;
 	int idx;
+#if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
+	int max_procs, running_procs;
+	pid_t *procs;
+#endif
 } FIX_ALIASING;
 #define G (*(struct globals*)bb_common_bufsiz1)
 #define INIT_G() do { \
@@ -110,14 +121,92 @@ struct globals {
 	G.eof_str = NULL; /* need to clear by hand because we are NOEXEC applet */ \
 	IF_FEATURE_XARGS_SUPPORT_REPL_STR(G.repl_str = "{}";) \
 	IF_FEATURE_XARGS_SUPPORT_REPL_STR(G.eol_ch = '\n';) \
+	IF_FEATURE_XARGS_SUPPORT_PARALLEL(G.max_procs = 1;) \
+	IF_FEATURE_XARGS_SUPPORT_PARALLEL(G.running_procs = 0;) \
+	IF_FEATURE_XARGS_SUPPORT_PARALLEL(G.procs = NULL;) \
 } while (0)
 
+
+#if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
+static int wait_for_slot(int *idx)
+{
+	int status;
+	pid_t pid;
+
+	/* if less than max_procs running, set status to 0, return next free slot */
+	if (G.running_procs < G.max_procs) {
+		*idx = G.running_procs++;
+		return 0;
+	}
+
+	pid = safe_waitpid(-1, &status, 0);
+	if (pid < 0)
+		return pid;
+
+	for (*idx = 0; *idx < G.max_procs; (*idx)++)
+		if (G.procs[*idx] == pid) {
+			G.procs[*idx] = 0;
+			return WEXITSTATUS(status);
+		}
+
+	bb_error_msg("waitpid returned %"PRIu64" but we did not spawn it",
+			(uint64_t)pid);
+
+	return -1;
+}
+
+static int reap_remaining(void)
+{
+	int status, ret = 0, ret2;
+	while (G.running_procs) {
+		pid_t pid = safe_waitpid(-1, &status, 0);
+		if (pid < 0)
+			return errno == ENOENT ? 127 : 126;
+		G.running_procs--;
+		status = WEXITSTATUS(status);
+		if (status == 255)
+			ret2 = 124;
+		else if (status >= 0x180)
+			ret2 = 125;
+		else if (status)
+			ret2 = 123;
+		else
+			ret2 = 0;
+		if (ret < ret2)
+			ret = ret2;
+	}
+	return ret;
+}
+#endif /* SUPPORT_PARALLEL */
 
 static int xargs_exec(void)
 {
 	int status;
 
+#if !ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
 	status = spawn_and_wait(G.args);
+#else
+	if (!G.max_procs) {
+		pid_t p = spawn(G.args);
+		if (p == -1)
+			status = -1;
+		else {
+			status = 0;
+			G.running_procs++;
+		}
+	} else if (G.max_procs > 1) {
+		int idx = -1;
+		status = wait_for_slot(&idx);
+		if (status >= 0 && status < 0x180) {
+			pid_t p = spawn(G.args);
+			if (p < 0)
+				status = -1;
+			else
+				G.procs[idx] = p;
+		}
+	} else
+		status = spawn_and_wait(G.args);
+#endif
 	if (status < 0) {
 		bb_simple_perror_msg(G.args[0]);
 		return errno == ENOENT ? 127 : 126;
@@ -451,6 +540,9 @@ static int xargs_ask_confirmation(void)
 //usage:	IF_FEATURE_XARGS_SUPPORT_REPL_STR(
 //usage:     "\n	-I STR	Replace STR within PROG ARGS with input line"
 //usage:	)
+//usage:	IF_FEATURE_XARGS_SUPPORT_PARALLEL(
+//usage:     "\n	-P N	Run up to N processes in parallel"
+//usage:	)
 //usage:	IF_FEATURE_XARGS_SUPPORT_TERMOPT(
 //usage:     "\n	-x	Exit if size is exceeded"
 //usage:	)
@@ -488,7 +580,8 @@ enum {
 	IF_FEATURE_XARGS_SUPPORT_CONFIRMATION("p") \
 	IF_FEATURE_XARGS_SUPPORT_TERMOPT(     "x") \
 	IF_FEATURE_XARGS_SUPPORT_ZERO_TERM(   "0") \
-	IF_FEATURE_XARGS_SUPPORT_REPL_STR(    "I:i::")
+	IF_FEATURE_XARGS_SUPPORT_REPL_STR(    "I:i::") \
+	IF_FEATURE_XARGS_SUPPORT_PARALLEL(    "P:")
 
 int xargs_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int xargs_main(int argc, char **argv)
@@ -507,6 +600,7 @@ int xargs_main(int argc, char **argv)
 #else
 #define read_args process_stdin
 #endif
+	IF_FEATURE_XARGS_SUPPORT_PARALLEL(char *opt_P;)
 
 	INIT_G();
 
@@ -519,6 +613,7 @@ int xargs_main(int argc, char **argv)
 	opt = getopt32(argv, OPTION_STR,
 		&max_args, &max_chars, &G.eof_str, &G.eof_str
 		IF_FEATURE_XARGS_SUPPORT_REPL_STR(, &G.repl_str, &G.repl_str)
+		IF_FEATURE_XARGS_SUPPORT_PARALLEL(, &opt_P)
 	);
 
 	/* -E ""? You may wonder why not just omit -E?
@@ -531,6 +626,14 @@ int xargs_main(int argc, char **argv)
 		IF_FEATURE_XARGS_SUPPORT_ZERO_TERM(read_args = process0_stdin;)
 		IF_FEATURE_XARGS_SUPPORT_REPL_STR(G.eol_ch = '\0';)
 	}
+
+#if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
+	if (opt_P) {
+        G.max_procs = xatoi(opt_P);
+		if (G.max_procs > 1)
+			G.procs = xmalloc(sizeof(G.procs[0]) * G.max_procs);
+	}
+#endif
 
 	argv += optind;
 	argc -= optind;
@@ -652,6 +755,13 @@ int xargs_main(int argc, char **argv)
 
 		overlapping_strcpy(buf, rem);
 	} /* while */
+
+#if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
+	i = reap_remaining();
+	/* old child_error can be overridden by more serious error */
+	if (i > child_error)
+		child_error = i;
+#endif
 
 	if (ENABLE_FEATURE_CLEAN_UP) {
 		free(G.args);
