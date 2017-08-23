@@ -112,7 +112,11 @@ struct globals {
 	int idx;
 #if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
 	int max_procs, running_procs;
+#if ENABLE_PLATFORM_MINGW32
+	HANDLE *procs;
+#else
 	pid_t *procs;
+#endif
 #endif
 } FIX_ALIASING;
 #define G (*(struct globals*)bb_common_bufsiz1)
@@ -128,6 +132,77 @@ struct globals {
 
 
 #if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
+#if ENABLE_PLATFORM_MINGW32
+static int wait_for_slot_1(int *idx, int reap_children)
+{
+	int i;
+
+	/* if less than max_procs running, set status to 0, return next free slot */
+	if (!reap_children && G.running_procs < G.max_procs) {
+		*idx = G.running_procs++;
+		return 0;
+	}
+
+check_exit_codes:
+	for (i = G.running_procs - 1; i >= 0; i--) {
+		DWORD status = 0;
+		if (!GetExitCodeProcess(G.procs[i], &status) ||
+				status != STILL_ACTIVE) {
+			CloseHandle(G.procs[i]);
+			if (i + 1 < G.running_procs)
+				G.procs[i] = G.procs[G.running_procs - 1];
+			*idx = G.running_procs - 1;
+			if (reap_children)
+				G.running_procs--;
+			return status;
+		}
+	}
+
+	if (G.running_procs < MAXIMUM_WAIT_OBJECTS)
+		WaitForMultipleObjects((DWORD)G.running_procs, G.procs, FALSE,
+				INFINITE);
+	else {
+		/* Fall back to polling */
+		for (;;) {
+			DWORD nr = i + MAXIMUM_WAIT_OBJECTS > G.running_procs ?
+				MAXIMUM_WAIT_OBJECTS : (DWORD)(G.running_procs - i);
+			DWORD ret = WaitForMultipleObjects(nr, G.procs + i, FALSE, 100);
+
+			if (ret != WAIT_TIMEOUT)
+				break;
+			i += MAXIMUM_WAIT_OBJECTS;
+			if (i > G.running_procs)
+				i = 0;
+		}
+	}
+
+	goto check_exit_codes;
+}
+
+static int wait_for_slot(int *idx)
+{
+	return wait_for_slot_1(idx, 0);
+}
+
+static int reap_remaining(void)
+{
+	int status, ret = 0, ret2, dummy;
+	while (G.running_procs) {
+		status = wait_for_slot_1(&dummy, 1);
+		if (status == 255)
+			ret2 = 124;
+		else if (status >= 0x180)
+			ret2 = 125;
+		else if (status)
+			ret2 = 123;
+		else
+			ret2 = 0;
+		if (ret < ret2)
+			ret = ret2;
+	}
+	return ret;
+}
+#else /* !PLATFORM_MINGW32 */
 static int wait_for_slot(int *idx)
 {
 	int status;
@@ -177,6 +252,7 @@ static int reap_remaining(void)
 	}
 	return ret;
 }
+#endif /* PLATFORM_MINGW32 */
 #endif /* SUPPORT_PARALLEL */
 
 static int xargs_exec(void)
@@ -198,7 +274,11 @@ static int xargs_exec(void)
 		int idx = -1;
 		status = wait_for_slot(&idx);
 		if (status >= 0 && status < 0x180) {
+#if ENABLE_PLATFORM_MINGW32
+			HANDLE p = (HANDLE)mingw_spawn_proc((const char **)G.args);
+#else
 			pid_t p = spawn(G.args);
+#endif
 			if (p < 0)
 				status = -1;
 			else
@@ -625,6 +705,10 @@ int xargs_main(int argc, char **argv)
 #if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
 	if (opt_P) {
         G.max_procs = xatoi(opt_P);
+#if ENABLE_PLATFORM_MINGW32
+		if (!G.max_procs)
+			G.max_procs = MAXIMUM_WAIT_OBJECTS;
+#endif
 		if (G.max_procs > 1)
 			G.procs = xmalloc(sizeof(G.procs[0]) * G.max_procs);
 	}
