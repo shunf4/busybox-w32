@@ -9429,7 +9429,8 @@ static int FAST_FUNC builtin_read(char **argv)
 		opt_n,
 		opt_p,
 		opt_t,
-		opt_u
+		opt_u,
+		NULL
 	);
 
 	if ((uintptr_t)r == 1 && errno == EINTR) {
