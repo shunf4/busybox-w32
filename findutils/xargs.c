@@ -203,6 +203,12 @@ static int xargs_exec(void)
 				status = -1;
 			else
 				G.procs[idx] = p;
+		} else {
+			while (G.running_procs) {
+				int status2 = wait_for_slot(&idx);
+				if (status2 && !status)
+					status = status2;
+			}
 		}
 #else
 		pid_t pid;
@@ -675,10 +681,11 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
 
 #if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
 	if (G.max_procs <= 0) /* -P0 means "run lots of them" */
-#if ENABLE_PLATFORM_MINGW32
-		G.max_procs = MAXIMUM_WAIT_OBJECTS;
-#else
+#if !ENABLE_PLATFORM_MINGW32
 		G.max_procs = 100; /* let's not go crazy high */
+#else
+		G.max_procs = MAXIMUM_WAIT_OBJECTS;
+	G.procs = xmalloc(sizeof(G.procs[0]) * G.max_procs);
 #endif
 #endif
 
