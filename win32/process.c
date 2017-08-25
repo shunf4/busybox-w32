@@ -218,7 +218,7 @@ int waitpid(pid_t pid, int *status, int options)
 			return ret == -1 ? -1 : pid;
 		}
 	}
-	errno = pid < 0 ? ENOSYS : EINVAL;
+	errno = EINVAL;
 	return -1;
 }
 
