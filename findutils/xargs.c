@@ -201,7 +201,7 @@ static int xargs_exec(void)
 	} else {
 #if ENABLE_PLATFORM_MINGW32
 		int idx;
-		status = !G.running_procs ? 0 : wait_for_slot(&idx);
+		status = !G.running_procs && !G.max_procs ? 0 : wait_for_slot(&idx);
 		if (G.max_procs) {
 			HANDLE p = (HANDLE)mingw_spawn_proc((const char **)G.args);
 			if (p < 0)
