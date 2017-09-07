@@ -2957,7 +2957,7 @@ cdcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
 	goto docd;
 
  err:
-	ash_msg_and_raise_error("can't cd to %s", dest);
+	ash_msg_and_raise_perror("can't cd to %s", dest);
 	/* NOTREACHED */
  out:
 	if (flags & CD_PRINT)
@@ -11058,7 +11058,7 @@ setinputfile(const char *fname, int flags)
 		if (flags & INPUT_NOFILE_OK)
 			goto out;
 		exitstatus = 127;
-		ash_msg_and_raise_error("can't open '%s'", fname);
+		ash_msg_and_raise_perror("can't open '%s'", fname);
 	}
 	if (fd < 10)
 		fd = savefd(fd);
