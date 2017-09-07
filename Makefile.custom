@@ -2,6 +2,15 @@
 # Build system
 # ==========================================================================
 
+ifeq ($(AR),x86_64-w64-mingw32-ar)
+AR := x86_64-w64-mingw32-gcc-ar
+STRIP := strip
+endif
+ifeq ($(AR),i686-w64-mingw32-ar)
+AR := i686-w64-mingw32-gcc-ar
+STRIP := strip
+endif
+
 busybox.links: $(srctree)/applets/busybox.mkll $(objtree)/include/autoconf.h include/applets.h
 	$(Q)-$(SHELL) $^ > $@
 
