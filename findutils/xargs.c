@@ -64,6 +64,11 @@
 //config:	bool "Enable -P N: processes to run in parallel"
 //config:	default y
 //config:	depends on XARGS
+//config:
+//config:config FEATURE_XARGS_SUPPORT_ARGS_FILE
+//config:	bool "Enable --arg-file PATH: use file instead of stdin"
+//config:	default y
+//config:	depends on XARGS
 
 //applet:IF_XARGS(APPLET_NOEXEC(xargs, xargs, BB_DIR_USR_BIN, BB_SUID_DROP, xargs))
 
@@ -602,6 +607,9 @@ static int xargs_ask_confirmation(void)
 //usage:	IF_FEATURE_XARGS_SUPPORT_ZERO_TERM(
 //usage:     "\n	-0	Input is separated by NUL characters"
 //usage:	)
+//usage:	IF_FEATURE_XARGS_SUPPORT_ARGS_FILE(
+//usage:     "\n	-a PATH	Read args from file instead of stdin"
+//usage:	)
 //usage:     "\n	-t	Print the command on stderr before execution"
 //usage:     "\n	-e[STR]	STR stops input processing"
 //usage:     "\n	-n N	Pass no more than N args to PROG"
@@ -650,7 +658,8 @@ enum {
 	IF_FEATURE_XARGS_SUPPORT_TERMOPT(     "x") \
 	IF_FEATURE_XARGS_SUPPORT_ZERO_TERM(   "0") \
 	IF_FEATURE_XARGS_SUPPORT_REPL_STR(    "I:i::") \
-	IF_FEATURE_XARGS_SUPPORT_PARALLEL(    "P:+")
+	IF_FEATURE_XARGS_SUPPORT_PARALLEL(    "P:+") \
+	IF_FEATURE_XARGS_SUPPORT_ARGS_FILE(   "a:")
 
 int xargs_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int xargs_main(int argc UNUSED_PARAM, char **argv)
@@ -669,6 +678,7 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
 #else
 #define read_args process_stdin
 #endif
+	IF_FEATURE_XARGS_SUPPORT_ARGS_FILE(char *opt_a = NULL;)
 
 	INIT_G();
 
@@ -677,6 +687,7 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
 		&max_args, &max_chars, &G.eof_str, &G.eof_str
 		IF_FEATURE_XARGS_SUPPORT_REPL_STR(, &G.repl_str, &G.repl_str)
 		IF_FEATURE_XARGS_SUPPORT_PARALLEL(, &G.max_procs)
+		IF_FEATURE_XARGS_SUPPORT_ARGS_FILE(, &opt_a)
 	);
 
 #if ENABLE_FEATURE_XARGS_SUPPORT_PARALLEL
@@ -687,6 +698,16 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
 		G.max_procs = MAXIMUM_WAIT_OBJECTS;
 	G.procs = xmalloc(sizeof(G.procs[0]) * G.max_procs);
 #endif
+#endif
+
+#if ENABLE_FEATURE_XARGS_SUPPORT_ARGS_FILE
+	if (opt_a) {
+		int fd = open(opt_a, O_RDONLY);
+		if (fd < 0)
+			bb_perror_msg_and_die("can't open '%s'", opt_a);
+		if (dup2(fd, 0) < 0)
+			bb_perror_msg_and_die("Could not reopen stdin");
+	}
 #endif
 
 	/* -E ""? You may wonder why not just omit -E?
