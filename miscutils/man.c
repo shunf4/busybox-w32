@@ -200,7 +200,7 @@ static char **add_MANPATH(char **man_path_list, int *count_mp, char *path)
 		char *next_path;
 		char **path_element;
 #if ENABLE_PLATFORM_MINGW32
-		char save;
+		char save = ';';
 
 		next_path = (char *)next_path_sep(path);
 #else
