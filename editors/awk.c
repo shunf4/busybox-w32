@@ -2100,7 +2100,7 @@ static char *awk_printf(node *n)
 	char *b = NULL;
 	char *fmt, *s, *f;
 	const char *s1;
-	int i, j, incr, bsize;
+	int i, j, incr, bsize = 0;
 	char c, c1;
 	var *v, *arg;
 
@@ -2163,7 +2163,7 @@ static int awk_sub(node *rn, const char *repl, int nm, var *src, var *dest, int 
 {
 	char *resbuf;
 	const char *sp;
-	int match_no, residx, replen, resbufsize;
+	int match_no, residx, replen, resbufsize = 0;
 	int regexec_flags;
 	regmatch_t pmatch[10];
 	regex_t sreg, *regex;
