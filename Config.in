@@ -659,6 +659,13 @@ config DEBUG_SANITIZE
 
 	If you aren't developing/testing busybox, say N here.
 
+config OPTIMIZE_FOR_SPEED
+	bool "Enable compiler optimizations for speed (instead of size)"
+	default n
+	help
+	BusyBox is normally optimized for size. This lets you optimize for
+	speed instead.
+
 config UNIT_TEST
 	bool "Build unit tests"
 	default n

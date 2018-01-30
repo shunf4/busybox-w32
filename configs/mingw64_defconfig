@@ -80,6 +80,7 @@ CONFIG_WERROR=y
 CONFIG_NO_DEBUG_LIB=y
 # CONFIG_DMALLOC is not set
 # CONFIG_EFENCE is not set
+CONFIG_OPTIMIZE_FOR_SPEED=y
 
 #
 # Library Tuning

@@ -72,7 +72,11 @@ CFLAGS += $(call cc-option,-g,)
 ifeq ($(CONFIG_DEBUG_PESSIMIZE),y)
 CFLAGS += $(call cc-option,-O0,)
 else
+ifeq ($(CONFIG_OPTIMIZE_FOR_SPEED),y)
+CFLAGS += $(call cc-option,-O2,)
+else
 CFLAGS += $(call cc-option,-Os,$(call cc-option,-O2,))
+endif
 endif
 endif
 ifeq ($(CONFIG_DEBUG_SANITIZE),y)
