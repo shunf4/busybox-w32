@@ -4422,6 +4422,7 @@ waitpid_child(int *status, int wait_flags)
 		return pid;
 	}
 	GetExitCodeProcess(proclist[idx], &win_status);
+	CloseHandle(proclist[idx]);
 	pid = pidlist[idx];
 	free(pidlist);
 	free(proclist);
@@ -14783,11 +14784,19 @@ spawn_forkshell(struct job *jp, struct forkshell *fs, int mode)
 	char buf[16];
 	const char *argv[] = { "sh", "--forkshell", NULL, NULL };
 	intptr_t ret;
+	HANDLE hCurrentProcess;
 
 	new = forkshell_prepare(fs);
 	sprintf(buf, "%p", new->hMapFile);
 	argv[2] = buf;
 	ret = mingw_spawn_proc(argv);
+	if (ret != -1) {
+		hCurrentProcess = GetCurrentProcess();
+		if (!DuplicateHandle(hCurrentProcess, (HANDLE)ret, hCurrentProcess,
+				(HANDLE*)&ret, 0, TRUE, DUPLICATE_SAME_ACCESS)) {
+			ret = -1;
+		}
+	}
 	CloseHandle(new->hMapFile);
 	UnmapViewOfFile(new);
 	if (ret == -1) {
